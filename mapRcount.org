@@ -1,0 +1,7 @@
+
+
+read json line by line, extract key and send it concurrently to buddered
+channel
+
+
+read and add to map
