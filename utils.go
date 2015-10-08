@@ -1,4 +1,3 @@
-//
 // utils.go
 // Copyright (C) 2015 giulio <giulioungaretti@me.com>
 //

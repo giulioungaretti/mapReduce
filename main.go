@@ -1,3 +1,8 @@
+//maing.go
+// Copyright (C) 2015 giulio <giulioungaretti@me.com>
+//
+// Distributed under terms of the MIT license.
+//
 package main
 
 import (
@@ -9,12 +14,17 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
-var mapped int64
-var reduced int64
-var files int64
+const (
+	numDigesters = 1
+)
+
+var (
+	mapped  int64
+	reduced int64
+	files   int64
+)
 
 var counter = struct {
 	sync.RWMutex
@@ -39,24 +49,27 @@ func main() {
 	flag.Parse()
 	pathsCH := WalkFiles(*path, ".gz")
 	strings := make(chan string)
+	done := make(chan struct{})
 	var wg sync.WaitGroup
+	wg.Add(numDigesters)
 	var wg2 sync.WaitGroup
-
-	for p := range pathsCH {
-		wg.Add(1)
-		go func(strings chan string) {
-			Map(p, strings)
-			wg.Done()
-		}(strings)
+	wg2.Add(numDigesters)
+	for i := 0; i < numDigesters; i++ {
+		go func(done chan struct{}) {
+			Reduce(strings, done)
+			wg2.Done()
+		}(done)
 	}
-	go Reduce(strings, wg2)
-	go func() {
-		for {
-			PrintStatus()
-			time.Sleep(10 * time.Second)
+	for i := 0; i < numDigesters; i++ {
+		for p := range pathsCH {
+			go func() {
+				Map(p, strings)
+				wg.Done()
+			}()
 		}
-	}()
+	}
 	wg.Wait()
+	close(done)
 	wg2.Wait()
 	//csvfile, err := os.Create(*out)
 	//if err != nil {
@@ -64,10 +77,11 @@ func main() {
 	//return
 	//}
 	//defer csvfile.Close()
-	f, err := os.OpenFile(filename, os.O_WRONLY, 0644)
+	f, err := os.OpenFile(*out, os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)
 	}
+	defer f.Close()
 	writer := csv.NewWriter(f)
 	for value, count := range counter.m {
 		err := writer.Write([]string{value, strconv.Itoa(count)})
