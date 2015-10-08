@@ -61,12 +61,10 @@ func main() {
 		}(done)
 	}
 	for i := 0; i < numDigesters; i++ {
-		for p := range pathsCH {
-			go func() {
-				Map(p, strings)
-				wg.Done()
-			}()
-		}
+		go func() {
+			Map(pathsCH, strings)
+			wg.Done()
+		}()
 	}
 	wg.Wait()
 	close(done)
@@ -77,7 +75,7 @@ func main() {
 	//return
 	//}
 	//defer csvfile.Close()
-	f, err := os.OpenFile(*out, os.O_WRONLY, 0644)
+	f, err := os.OpenFile(*out, os.O_WRONLY|os.O_CREATE, 0660)
 	if err != nil {
 		panic(err)
 	}
