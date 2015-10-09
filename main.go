@@ -14,16 +14,17 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-)
+	"time"
 
-const (
-	numDigesters = 1
+	log "github.com/Sirupsen/logrus"
 )
 
 var (
-	mapped  int64
-	reduced int64
-	files   int64
+	mapped       int64
+	reduced      int64
+	files        int64
+	numDigesters int
+	numFiles     int
 )
 
 var counter = struct {
@@ -32,35 +33,49 @@ var counter = struct {
 }{m: make(map[string]int)}
 
 type Data struct {
-	Key string `json:"query"`
+	Key interface{} `json:"query"`
 }
 
 func PrintStatus() {
 	val := atomic.LoadInt64(&mapped)
 	valbad := atomic.LoadInt64(&reduced)
 	filesc := atomic.LoadInt64(&files)
-	fmt.Printf("files:mapped:reduced %v, %v:%v \n", filesc, val, valbad)
+	fmt.Printf("files:mapped:reduced %v:%v:%v \n", filesc, val, valbad)
 }
 
 func main() {
-	runtime.GOMAXPROCS(20)
+	// Only log the warning severity or above.
+	//log.SetLevel(log.DebugLevel)
+	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
+	//
 	var path = flag.String("path", ".", "root path of the data files.")
 	var out = flag.String("out", ".", " path of the output csv file.")
+	numDigesters = *flag.Int("numDigesters", runtime.NumCPU()-1, "number of digesters to run in parallel")
+	numFiles = *flag.Int("numFiles", runtime.NumCPU()+1, "number of files to read in parallel")
 	flag.Parse()
 	pathsCH := WalkFiles(*path, ".gz")
-	strings := make(chan string)
+	strings := make(chan string, 100)
 	done := make(chan struct{})
 	var wg sync.WaitGroup
-	wg.Add(numDigesters)
+	wg.Add(numFiles)
 	var wg2 sync.WaitGroup
 	wg2.Add(numDigesters)
+	log.Debugf("Starting...")
+	go func() {
+		for {
+			select {
+			case <-time.After(10 * time.Second):
+				PrintStatus()
+			}
+		}
+	}()
 	for i := 0; i < numDigesters; i++ {
-		go func(done chan struct{}) {
+		go func() {
 			Reduce(strings, done)
 			wg2.Done()
-		}(done)
+		}()
 	}
-	for i := 0; i < numDigesters; i++ {
+	for i := 0; i < numFiles; i++ {
 		go func() {
 			Map(pathsCH, strings)
 			wg.Done()
@@ -69,6 +84,7 @@ func main() {
 	wg.Wait()
 	close(done)
 	wg2.Wait()
+	log.Debugf("Writing CSV to disk")
 	f, err := os.OpenFile(*out, os.O_WRONLY|os.O_CREATE, 0660)
 	if err != nil {
 		panic(err)
