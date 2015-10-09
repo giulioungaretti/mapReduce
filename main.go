@@ -32,10 +32,6 @@ var counter = struct {
 	m map[string]int
 }{m: make(map[string]int)}
 
-type Data struct {
-	Key interface{} `json:"query"`
-}
-
 func PrintStatus() {
 	val := atomic.LoadInt64(&mapped)
 	valbad := atomic.LoadInt64(&reduced)
@@ -53,14 +49,9 @@ func main() {
 	numDigesters = *flag.Int("numDigesters", runtime.NumCPU()-1, "number of digesters to run in parallel")
 	numFiles = *flag.Int("numFiles", runtime.NumCPU()+1, "number of files to read in parallel")
 	flag.Parse()
-	pathsCH := WalkFiles(*path, ".gz")
-	strings := make(chan string, 100)
-	done := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(numFiles)
-	var wg2 sync.WaitGroup
-	wg2.Add(numDigesters)
-	log.Debugf("Starting...")
+	//
+	// printing status every 10 sec
+	//
 	go func() {
 		for {
 			select {
@@ -69,6 +60,17 @@ func main() {
 			}
 		}
 	}()
+	//
+	//  map reduce
+	//
+	pathsCH := WalkFiles(*path, ".gz")
+	strings := make(chan string, 100)
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(numFiles)
+	var wg2 sync.WaitGroup
+	wg2.Add(numDigesters)
+	log.Debugf("Starting...")
 	for i := 0; i < numDigesters; i++ {
 		go func() {
 			Reduce(strings, done)
@@ -84,6 +86,9 @@ func main() {
 	wg.Wait()
 	close(done)
 	wg2.Wait()
+	//
+	// csv out
+	//
 	log.Debugf("Writing CSV to disk")
 	f, err := os.OpenFile(*out, os.O_WRONLY|os.O_CREATE, 0660)
 	if err != nil {

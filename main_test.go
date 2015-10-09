@@ -12,9 +12,8 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"log"
+	log "github.com/Sirupsen/logrus"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,8 +25,11 @@ const (
 	testLineNumber int    = 10000
 )
 
-type testdata struct {
+type testData struct {
 	Query string
+}
+type badData struct {
+	Query int
 }
 
 var filenames []string
@@ -39,18 +41,36 @@ func init() {
 		filenames = append(filenames, fn)
 		// generate test data
 		for i := 0; i < testLineNumber; i++ {
-			var m testdata
-			if i == 4 {
-				m = testdata{"unicorn"}
-			} else {
-				m = testdata{"test"}
+			var m testData
+			switch i {
+			case 1:
+				var j badData
+				if i == 1 {
+					j = badData{1}
+					b, err := json.Marshal(j)
+					if err != nil {
+						panic(err)
+					}
+					WriteGZ(f, string(b))
+					WriteGZ(f, "\n")
+				}
+			case 4:
+				m = testData{"unicorn"}
+				b, err := json.Marshal(m)
+				if err != nil {
+					panic(err)
+				}
+				WriteGZ(f, string(b))
+				WriteGZ(f, "\n")
+			default:
+				m = testData{"test"}
+				b, err := json.Marshal(m)
+				if err != nil {
+					panic(err)
+				}
+				WriteGZ(f, string(b))
+				WriteGZ(f, "\n")
 			}
-			b, err := json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			WriteGZ(f, string(b))
-			WriteGZ(f, "\n")
 		}
 		CloseGZ(f)
 	}
@@ -91,42 +111,23 @@ func consume(strings chan string) {
 	}
 }
 
-func TestMap(t *testing.T) {
-	runtime.GOMAXPROCS(20)
-	pathsCH := WalkFiles(".", ".gz")
-	strings := make(chan string, 100)
-	var wg sync.WaitGroup
-	wg.Add(numDigesters)
-	go consume(strings)
-	for i := 0; i < numDigesters; i++ {
-		go func() {
-			Map(pathsCH, strings)
-			wg.Done()
-		}()
-	}
-	wg.Wait()
-	val := atomic.LoadInt64(&mapped)
-	if int(val) != testLineNumber*testFileNumber {
-		t.Errorf("got %v, expectext %v", val, testLineNumber*testFileNumber)
-	}
-}
-
-func TestReduce(t *testing.T) {
-	runtime.GOMAXPROCS(20)
+func TestMapReduce(t *testing.T) {
 	pathsCH := WalkFiles(".", ".gz")
 	strings := make(chan string, 100)
 	done := make(chan struct{})
+	n := 2
 	var wg sync.WaitGroup
-	wg.Add(numDigesters)
+	wg.Add(n)
 	var wg2 sync.WaitGroup
-	wg2.Add(numDigesters)
-	for i := 0; i < numDigesters; i++ {
+	wg2.Add(n)
+	log.Debugf("Starting...")
+	for i := 0; i < n; i++ {
 		go func() {
 			Reduce(strings, done)
 			wg2.Done()
 		}()
 	}
-	for i := 0; i < numDigesters; i++ {
+	for i := 0; i < n; i++ {
 		go func() {
 			Map(pathsCH, strings)
 			wg.Done()
@@ -134,7 +135,6 @@ func TestReduce(t *testing.T) {
 	}
 	wg.Wait()
 	close(done)
-	//
 	wg2.Wait()
 	val := atomic.LoadInt64(&reduced)
 	if int(val) != testLineNumber*testFileNumber {
