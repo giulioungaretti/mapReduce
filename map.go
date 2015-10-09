@@ -10,15 +10,16 @@ import (
 	"bufio"
 	"compress/gzip"
 	"os"
+	"strconv"
 	"sync/atomic"
 
 	log "github.com/Sirupsen/logrus"
 )
 
 // Find files in path and counts the values specified in data
-func Map(pathsCH <-chan string, strings chan string) {
+func Map(pathsCH <-chan string, stringsCH chan string) {
 	for path := range pathsCH {
-		atomic.AddInt64(&files, 1)
+		log.Debugf("start with %v", path)
 		file, err := os.Open(path)
 		if err != nil {
 			log.Errorf("%v", err)
@@ -36,10 +37,17 @@ func Map(pathsCH <-chan string, strings chan string) {
 			copy(line, b)
 			v, err := UMarsh(line)
 			if err != nil {
-				log.Errorf("%v", err)
+				log.Errorf("%v :%v ", err, string(line))
+				continue
 			}
-			strings <- v.Key
+			switch t := v.Key.(type) {
+			case string:
+				stringsCH <- t
+			case int:
+				stringsCH <- strconv.Itoa(t)
+			}
 		}
-		log.Infof("done with %v", path)
+		atomic.AddInt64(&files, 1)
+		log.Debugf("done with %v", path)
 	}
 }
