@@ -69,12 +69,6 @@ func main() {
 	wg.Wait()
 	close(done)
 	wg2.Wait()
-	//csvfile, err := os.Create(*out)
-	//if err != nil {
-	//fmt.Println("Error:", err)
-	//return
-	//}
-	//defer csvfile.Close()
 	f, err := os.OpenFile(*out, os.O_WRONLY|os.O_CREATE, 0660)
 	if err != nil {
 		panic(err)
