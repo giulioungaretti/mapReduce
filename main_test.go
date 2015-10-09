@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
@@ -21,31 +22,38 @@ import (
 
 const (
 	testFileName   string = "test.json.gz"
-	testLineNumber int    = 10
+	testFileNumber int    = 10
+	testLineNumber int    = 10000
 )
 
 type testdata struct {
 	Query string
 }
 
+var filenames []string
+
 func init() {
-	f := CreateGZ(testFileName)
-	// generate test data
-	for i := 0; i < testLineNumber; i++ {
-		var m testdata
-		if i == 4 {
-			m = testdata{"unicorn"}
-		} else {
-			m = testdata{"test"}
+	for i := 0; i < testFileNumber; i++ {
+		fn := fmt.Sprintf("%v%v", i, testFileName)
+		f := CreateGZ(fn)
+		filenames = append(filenames, fn)
+		// generate test data
+		for i := 0; i < testLineNumber; i++ {
+			var m testdata
+			if i == 4 {
+				m = testdata{"unicorn"}
+			} else {
+				m = testdata{"test"}
+			}
+			b, err := json.Marshal(m)
+			if err != nil {
+				panic(err)
+			}
+			WriteGZ(f, string(b))
+			WriteGZ(f, "\n")
 		}
-		b, err := json.Marshal(m)
-		if err != nil {
-			panic(err)
-		}
-		WriteGZ(f, string(b))
-		WriteGZ(f, "\n")
+		CloseGZ(f)
 	}
-	CloseGZ(f)
 }
 
 type F struct {
@@ -85,7 +93,7 @@ func consume(strings chan string) {
 
 func TestMap(t *testing.T) {
 	runtime.GOMAXPROCS(20)
-	pathsCH := WalkFiles(testFileName, ".gz")
+	pathsCH := WalkFiles(".", ".gz")
 	strings := make(chan string, 100)
 	var wg sync.WaitGroup
 	wg.Add(numDigesters)
@@ -98,14 +106,14 @@ func TestMap(t *testing.T) {
 	}
 	wg.Wait()
 	val := atomic.LoadInt64(&mapped)
-	if int(val) != testLineNumber {
-		t.Errorf("got %v, expectext %v", val, testLineNumber)
+	if int(val) != testLineNumber*testFileNumber {
+		t.Errorf("got %v, expectext %v", val, testLineNumber*testFileNumber)
 	}
 }
 
 func TestReduce(t *testing.T) {
 	runtime.GOMAXPROCS(20)
-	pathsCH := WalkFiles(testFileName, ".gz")
+	pathsCH := WalkFiles(".", ".gz")
 	strings := make(chan string, 100)
 	done := make(chan struct{})
 	var wg sync.WaitGroup
@@ -113,10 +121,10 @@ func TestReduce(t *testing.T) {
 	var wg2 sync.WaitGroup
 	wg2.Add(numDigesters)
 	for i := 0; i < numDigesters; i++ {
-		go func(done chan struct{}) {
+		go func() {
 			Reduce(strings, done)
 			wg2.Done()
-		}(done)
+		}()
 	}
 	for i := 0; i < numDigesters; i++ {
 		go func() {
@@ -126,13 +134,16 @@ func TestReduce(t *testing.T) {
 	}
 	wg.Wait()
 	close(done)
+	//
 	wg2.Wait()
 	val := atomic.LoadInt64(&reduced)
-	if int(val) != testLineNumber {
-		t.Errorf("got %v, expectext %v", val, testLineNumber)
+	if int(val) != testLineNumber*testFileNumber {
+		t.Errorf("got %v, expectext %v", val, testLineNumber*testFileNumber)
 	}
-	err := os.Remove(testFileName)
-	if err != nil {
-		panic(err)
+	for _, fn := range filenames {
+		err := os.Remove(fn)
+		if err != nil {
+			panic(err)
+		}
 	}
 }

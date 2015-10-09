@@ -22,6 +22,8 @@ func Reduce(strings chan string, done <-chan struct{}) {
 			}
 			counter.Unlock()
 		case <-done:
+			// this won't happend untill strings contains
+			// al the stuff
 			return
 		default:
 			continue
